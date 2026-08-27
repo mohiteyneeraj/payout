@@ -100,9 +100,6 @@ def verify_pin(email: str, pin: str) -> dict:
             return {'ok': False, 'error': 'Too many attempts. Try again later.'}
         _attempt_log.setdefault(norm, []).append(time.time())
 
-    if panelists.is_removed(norm):
-        return {'ok': False, 'error': 'Incorrect email or PIN.'}
-
     expected = sync_pins().get(norm)
     if not expected or pin != expected:
         return {'ok': False, 'error': 'Incorrect email or PIN.'}

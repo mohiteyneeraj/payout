@@ -36,19 +36,29 @@ def _allowed_emails(overlay: dict) -> set:
 
 def get_roster() -> list:
     """Every panelist an admin should see: allowlisted derived (real payout
-    data) rows, plus manually-onboarded (not-yet-paid) rows."""
+    data) rows, plus manually-onboarded (not-yet-paid) rows.
+
+    A person can have two allowlisted emails (personal + work) that both
+    resolve to the same human -- dedup by phone number so they show up
+    once, not once per matched email."""
     overlay = _load_overlay()
-    allowed = _allowed_emails(overlay)
+    allowed_items = [(email, r) for email, r in overlay.items() if r.get('status') == 'active']
+    allowed = {email for email, _ in allowed_items}
     derived = pl.get_all_interviewers()
 
     rows = []
     matched_emails = set()
+    seen_phones = set()
     for r in derived:
         emails = pl.get_emails_for_db_id(r['db_id']) or ({_norm_email(r['email'])} if r.get('email') else set())
         hit = emails & allowed
         if not hit:
             continue
         matched_emails |= hit
+        for e in hit:
+            phone = overlay[e].get('phone')
+            if phone:
+                seen_phones.add(phone)
         ov = overlay.get(_norm_email(r.get('email')))
         rows.append({
             'db_id': r['db_id'], 'name': r['name'], 'email': r.get('email', ''),
@@ -58,11 +68,17 @@ def get_roster() -> list:
             'months_active': r['months_active'],
         })
 
-    for email in allowed - matched_emails:
-        ov = overlay[email]
+    for email, ov in allowed_items:
+        if email in matched_emails:
+            continue
+        phone = ov.get('phone', '')
+        if phone and phone in seen_phones:
+            continue
+        if phone:
+            seen_phones.add(phone)
         rows.append({
             'db_id': 'manual::' + email, 'name': ov.get('name', ''), 'email': ov.get('email', ''),
-            'phone': ov.get('phone', ''), 'status': 'active', 'is_manual': True,
+            'phone': phone, 'status': 'active', 'is_manual': True,
             'total_amount': 0.0, 'total_count': 0, 'months_active': 0,
         })
 

@@ -8,16 +8,26 @@ per interviewer.
 import os
 import re
 import time
-import warnings
+import datetime
 import threading
-import pandas as pd
+from dateutil import parser as _dateutil_parser
 
-# Interview-date strings mix m/d/yyyy and d-m-yyyy formats across eras; pandas
-# warns about the ambiguity but resolves it correctly via dateutil fallback
-# (used only for display sort order, not for payout math).
-warnings.filterwarnings('ignore', message='Parsing dates in')
+_DATETIME_MIN = datetime.datetime.min
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+
+# Interview-date strings mix m/d/yyyy and d-m-yyyy formats across eras;
+# dateutil resolves the ambiguity (day-first fallback) well enough for
+# display sort order -- this is never used for payout math.
+def _parse_date(v):
+    s = str(v or '').strip()
+    if not s:
+        return None
+    try:
+        return _dateutil_parser.parse(s)
+    except (ValueError, OverflowError):
+        return None
 
 SA_FILE   = os.environ.get('SA_FILE_PATH') or os.path.join(os.path.dirname(__file__), 'service_account.json')
 SCOPES    = ['https://www.googleapis.com/auth/spreadsheets.readonly']
@@ -606,15 +616,15 @@ def get_payouts_for(db_id: str) -> dict:
         months.append({'month': month_key, 'label': label,
                         'count': int(m['count']), 'amount': round(m['amount'], 2)})
         def _sort_key(rec):
-            ts = pd.to_datetime(rec.get('date_raw'), errors='coerce')
-            return (pd.isna(ts), ts)
+            ts = _parse_date(rec.get('date_raw'))
+            return (ts is None, ts or _DATETIME_MIN)
 
         rows = []
         for rec in sorted(m['rows'], key=_sort_key):
-            ts = pd.to_datetime(rec.get('date_raw'), errors='coerce')
+            ts = _parse_date(rec.get('date_raw'))
             rows.append({
                 'candidate': rec['candidate'], 'role': rec['role'],
-                'date': ts.strftime('%d %b %Y %H:%M') if pd.notna(ts) else str(rec.get('date_raw') or ''),
+                'date': ts.strftime('%d %b %Y %H:%M') if ts is not None else str(rec.get('date_raw') or ''),
                 'amount': rec['amount'],
             })
         details[month_key] = rows

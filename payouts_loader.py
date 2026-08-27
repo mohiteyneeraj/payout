@@ -531,6 +531,12 @@ def find_db_id_by_email(email: str):
     return None
 
 
+def get_emails_for_db_id(db_id: str) -> set:
+    load_data()
+    entry = (_cache['directory'] or {}).get(db_id)
+    return set(entry['emails']) if entry else set()
+
+
 def get_display_name(db_id: str) -> str:
     load_data()
     entry = (_cache['directory'] or {}).get(db_id)

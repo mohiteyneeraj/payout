@@ -1,0 +1,12 @@
+# Credentials — never commit
+service_account.json
+data/secret_key.json
+data/app_state_sheet_id.json
+data/.otp_debug
+data/pins.json
+
+# Runtime / caches
+__pycache__/
+*.pyc
+venv/
+*.log

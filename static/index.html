@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interviewer Payouts — Cuemath</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-logo">
+    <span class="logo-text">CUEMATH</span>
+  </div>
+  <div class="header-title">Interviewer Payouts</div>
+  <div id="adminNav" class="admin-nav hidden">
+    <button id="navMine" class="nav-tab">My Payouts</button>
+    <button id="navPayouts" class="nav-tab">Payouts</button>
+    <button id="navPanelists" class="nav-tab">Panelists</button>
+    <button id="navAnalytics" class="nav-tab">Analytics</button>
+    <button id="navAgreements" class="nav-tab">Agreements</button>
+  </div>
+  <div id="previewJump" class="preview-jump hidden">
+    <input type="text" id="previewJumpInput" list="interviewerList" placeholder="Preview as…" autocomplete="off">
+    <datalist id="interviewerList"></datalist>
+  </div>
+  <button id="logoutBtn" class="btn-ghost hidden">Log out</button>
+</header>
+
+<main class="main-content">
+
+  <!-- ── Screen 1: email + pin ───────────────────────────────────── -->
+  <section id="screenEmail" class="auth-card">
+    <h1>View your payouts</h1>
+    <p class="muted">Enter the email you use with Cuemath interviews and your 5-digit PIN.</p>
+    <form id="emailForm">
+      <input type="email" id="emailInput" placeholder="you@example.com" required autocomplete="email">
+      <input type="text" id="pinInput" placeholder="PIN" inputmode="numeric" maxlength="5" required autocomplete="current-password">
+      <button type="submit" class="btn-primary">Log in</button>
+    </form>
+    <p id="emailMsg" class="form-msg"></p>
+  </section>
+
+  <!-- ── Screen: panelist dashboard (Payouts / Agreement / Feedback) ─── -->
+  <section id="screenDashboard" class="dashboard hidden">
+    <div class="dash-header">
+      <div>
+        <div class="dash-hello">Hi, <span id="dashName"></span></div>
+        <div class="dash-sub" id="dashSummary"></div>
+      </div>
+    </div>
+
+    <div class="sub-tabs">
+      <button id="dashSubPayoutsBtn" class="sub-tab active">Payouts</button>
+      <button id="dashSubAgreementBtn" class="sub-tab">Agreement</button>
+      <button id="dashSubFeedbackBtn" class="sub-tab">Feedback</button>
+    </div>
+
+    <div id="dashSubPayouts">
+      <div id="dashStats" class="stat-row"></div>
+      <div id="dashTrendChart" class="chart-card"></div>
+      <div id="monthList" class="month-list"></div>
+      <p id="statusFooter" class="status-footer"></p>
+    </div>
+
+    <div id="dashSubAgreement" class="hidden">
+      <div class="coming-soon-card">
+        <div class="coming-soon-badge">Coming soon</div>
+        <h2>Your agreement</h2>
+        <p class="muted">Agreements are launching here shortly — you'll be able to review and sign off on yours right from this tab.</p>
+      </div>
+    </div>
+
+    <div id="dashSubFeedback" class="hidden">
+      <div class="coming-soon-card">
+        <div class="coming-soon-badge">Coming soon</div>
+        <h2>Feedback</h2>
+        <p class="muted">This tab will let you review and acknowledge feedback with a sign-off, coming shortly.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Screen: admin — Payouts tab ──────────────────────────────── -->
+  <section id="screenAdminList" class="dashboard hidden">
+    <div class="dash-header">
+      <div>
+        <div class="dash-hello">All Interviewers</div>
+        <div class="dash-sub" id="adminSummary"></div>
+      </div>
+    </div>
+
+    <div id="adminStats" class="stat-row"></div>
+
+    <div class="admin-toolbar">
+      <input type="text" id="adminSearch" class="admin-search" placeholder="Search by name or email…">
+      <a id="exportCsvBtn" class="btn-outline" href="/api/admin/export.csv">⬇ Export CSV</a>
+    </div>
+    <div id="adminTable" class="admin-table"></div>
+
+    <p id="statusFooterAdmin" class="status-footer"></p>
+  </section>
+
+  <!-- ── Screen: admin — Panelists tab ────────────────────────────── -->
+  <section id="screenAdminPanelists" class="dashboard hidden">
+    <div class="dash-header">
+      <div>
+        <div class="dash-hello">Panelists</div>
+        <div class="dash-sub" id="panelistsSummary"></div>
+      </div>
+    </div>
+
+    <form id="addPanelistForm" class="add-panelist-form">
+      <input type="text" id="addPanelistName" placeholder="Name" required>
+      <input type="email" id="addPanelistEmail" placeholder="Email" required>
+      <input type="text" id="addPanelistPhone" placeholder="Phone (optional)">
+      <button type="submit" class="btn-primary">+ Add panelist</button>
+    </form>
+    <p id="addPanelistMsg" class="form-msg"></p>
+
+    <input type="text" id="panelistsSearch" class="admin-search" placeholder="Search by name, email or phone…">
+    <div id="panelistsTable" class="admin-table"></div>
+  </section>
+
+  <!-- ── Screen: admin — Analytics tab ────────────────────────────── -->
+  <section id="screenAdminAnalytics" class="dashboard hidden">
+    <div class="dash-header">
+      <div>
+        <div class="dash-hello">Analytics</div>
+      </div>
+    </div>
+    <div class="analytics-grid">
+      <div id="adminTrendChart" class="chart-card"></div>
+      <div id="topEarners" class="chart-card"></div>
+    </div>
+  </section>
+
+  <!-- ── Screen: admin — Agreements tab ───────────────────────────── -->
+  <section id="screenAdminAgreements" class="dashboard hidden">
+    <div class="coming-soon-card">
+      <div class="coming-soon-badge">Coming soon</div>
+      <h2>Agreements</h2>
+      <p class="muted">Panelist agreements will be manageable here shortly — send, track, and review sign-offs across everyone in the roster.</p>
+    </div>
+  </section>
+
+  <!-- ── Screen: admin drill-down / "view as" preview ──────────────── -->
+  <section id="screenAdminDetail" class="dashboard hidden">
+    <div class="dash-header">
+      <div>
+        <button id="adminBack" class="btn-link admin-back">← All interviewers</button>
+        <div class="dash-hello" id="adminDetailName"></div>
+        <div class="dash-sub" id="adminDetailSummary"></div>
+      </div>
+    </div>
+
+    <div class="preview-banner">
+      <span>Admin preview — this is exactly what <strong id="adminDetailBannerName"></strong> sees when they log in.</span>
+    </div>
+
+    <div class="sub-tabs">
+      <button id="adminDetailSubPayoutsBtn" class="sub-tab active">Payouts</button>
+      <button id="adminDetailSubAgreementBtn" class="sub-tab">Agreement</button>
+      <button id="adminDetailSubFeedbackBtn" class="sub-tab">Feedback</button>
+    </div>
+
+    <div id="adminDetailSubPayouts">
+      <div id="adminDetailStats" class="stat-row"></div>
+      <div id="adminDetailTrendChart" class="chart-card"></div>
+      <div id="adminDetailMonths" class="month-list"></div>
+    </div>
+
+    <div id="adminDetailSubAgreement" class="hidden">
+      <div class="coming-soon-card">
+        <div class="coming-soon-badge">Coming soon</div>
+        <h2>Agreement</h2>
+        <p class="muted">Agreements are launching here shortly.</p>
+      </div>
+    </div>
+
+    <div id="adminDetailSubFeedback" class="hidden">
+      <div class="coming-soon-card">
+        <div class="coming-soon-badge">Coming soon</div>
+        <h2>Feedback</h2>
+        <p class="muted">This tab will let panelists review and acknowledge feedback with a sign-off, coming shortly.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

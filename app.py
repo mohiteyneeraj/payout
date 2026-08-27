@@ -256,8 +256,14 @@ def api_status():
     })
 
 
+# Runs on import, not just `python app.py` directly -- gunicorn (used in
+# production) imports this module without ever hitting __main__, so gating
+# these behind that guard would mean production never preloads or
+# auto-syncs, and the first real request pays for a cold, synchronous
+# Sheets load that's slow enough to trip gunicorn's worker timeout.
+app.permanent_session_lifetime = datetime.timedelta(days=30)
+threading.Thread(target=_preload,        daemon=True).start()
+threading.Thread(target=_auto_sync_loop, daemon=True).start()
+
 if __name__ == '__main__':
-    app.permanent_session_lifetime = datetime.timedelta(days=30)
-    threading.Thread(target=_preload,        daemon=True).start()
-    threading.Thread(target=_auto_sync_loop, daemon=True).start()
     app.run(debug=False, host='0.0.0.0', port=5001)

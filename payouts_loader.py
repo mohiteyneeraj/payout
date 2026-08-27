@@ -65,6 +65,12 @@ _load_lock   = threading.Lock()
 _loading_now = False
 CACHE_TTL    = 1800  # 30 minutes
 
+# Older tabs are skipped entirely (not even fetched) to bound memory --
+# the full history back to 2024 doesn't fit in a 512MB instance alongside
+# the Sheets/Flask baseline. 'YYYY-MM': first month to load, inclusive.
+_MIN_MONTH = os.environ.get('MIN_PAYOUT_MONTH', '2026-04')
+MIN_MONTH_KEY = tuple(int(p) for p in _MIN_MONTH.split('-'))
+
 
 # ── Google Sheets helpers ───────────────────────────────────────────────────
 
@@ -130,7 +136,7 @@ def _classify_tabs(all_tabs: list) -> dict:
         if not tab.strip().endswith('Payouts') and tab not in MERGE_INTO:
             continue
         key = _month_key(target)
-        if key is None:
+        if key is None or key < MIN_MONTH_KEY:
             continue
         months.setdefault(key, [])
         if tab not in months[key]:

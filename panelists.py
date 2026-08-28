@@ -86,6 +86,16 @@ def get_roster() -> list:
     return rows
 
 
+def get_org_monthly_totals() -> list:
+    """Org-wide monthly totals restricted to the curated roster."""
+    roster_db_ids = {r['db_id'] for r in get_roster() if not r['is_manual']}
+    return pl.get_org_monthly_totals(db_ids=roster_db_ids)
+
+
+def is_in_roster(db_id: str) -> bool:
+    return any(r['db_id'] == db_id for r in get_roster())
+
+
 def get_removed() -> list:
     """Panelists explicitly marked removed (for the admin UI's restore action)."""
     overlay = _load_overlay()

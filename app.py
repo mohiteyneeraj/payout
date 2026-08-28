@@ -169,13 +169,15 @@ def _require_admin():
 def api_admin_interviewers():
     if not _require_admin():
         return jsonify({'ok': False, 'error': 'Not authorized'}), 403
-    return jsonify({'ok': True, 'interviewers': pl.get_all_interviewers()})
+    return jsonify({'ok': True, 'interviewers': panelists.get_roster()})
 
 
 @app.route('/api/admin/payouts/<path:db_id>')
 def api_admin_payouts(db_id):
     if not _require_admin():
         return jsonify({'ok': False, 'error': 'Not authorized'}), 403
+    if not panelists.is_in_roster(db_id):
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
     data = pl.get_payouts_for(db_id)
     email = next((r['email'] for r in panelists.get_roster() if r['db_id'] == db_id), '')
     _apply_ack_status(data, email)
@@ -186,7 +188,7 @@ def api_admin_payouts(db_id):
 def api_admin_summary():
     if not _require_admin():
         return jsonify({'ok': False, 'error': 'Not authorized'}), 403
-    return jsonify({'ok': True, 'monthly': pl.get_org_monthly_totals()})
+    return jsonify({'ok': True, 'monthly': panelists.get_org_monthly_totals()})
 
 
 @app.route('/api/admin/pins')
@@ -239,7 +241,7 @@ def api_admin_export_csv():
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(['Name', 'Email', 'Total Interviews', 'Total Amount'])
-    for row in pl.get_all_interviewers():
+    for row in panelists.get_roster():
         writer.writerow([row['name'], row['email'], row['total_count'], row['total_amount']])
     return Response(buf.getvalue(), mimetype='text/csv', headers={
         'Content-Disposition': 'attachment; filename=interviewer_payouts.csv',

@@ -592,15 +592,18 @@ def get_all_interviewers() -> list:
     return rows
 
 
-def get_org_monthly_totals() -> list:
-    """Month-by-month totals across every interviewer, oldest first — feeds the
-    admin trend chart."""
+def get_org_monthly_totals(db_ids: set = None) -> list:
+    """Month-by-month totals, oldest first — feeds the admin trend chart.
+    Pass db_ids to restrict the total to a specific set of interviewers
+    (e.g. the curated panelist roster) instead of everyone in the sheet."""
     load_data()
     person_month = _cache['df'] or {}
     months_meta  = _cache['months'] or {}
 
     totals: dict = {}
-    for slots in person_month.values():
+    for dbid, slots in person_month.items():
+        if db_ids is not None and dbid not in db_ids:
+            continue
         for month_key, m in slots.items():
             t = totals.setdefault(month_key, {'amount': 0.0, 'count': 0})
             t['amount'] += m['amount']

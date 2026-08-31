@@ -11,7 +11,6 @@ import io
 import json
 import time
 import secrets
-import threading
 import datetime
 from flask import Flask, jsonify, request, send_from_directory, session, Response
 
@@ -30,6 +29,11 @@ ACK_START_MONTH = os.environ.get('ACK_START_MONTH', '2026-08')
 
 
 def _get_secret_key() -> str:
+    """FLASK_SECRET_KEY should always be set in production -- a serverless
+    host's filesystem is either read-only or not shared/persisted across
+    invocations, so the file fallback below only really works for a
+    traditional always-on process (e.g. local dev, or Render without the
+    env var set). Without either, sessions won't survive a cold start."""
     env_key = os.environ.get('FLASK_SECRET_KEY')
     if env_key:
         return env_key
@@ -37,35 +41,22 @@ def _get_secret_key() -> str:
         with open(_SECRET_FILE, encoding='utf-8') as f:
             return json.load(f)['key']
     key = secrets.token_hex(32)
-    os.makedirs(os.path.dirname(_SECRET_FILE), exist_ok=True)
-    with open(_SECRET_FILE, 'w', encoding='utf-8') as f:
-        json.dump({'key': key}, f)
+    try:
+        os.makedirs(os.path.dirname(_SECRET_FILE), exist_ok=True)
+        with open(_SECRET_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'key': key}, f)
+    except OSError:
+        print('[app] Could not persist a generated secret key (read-only filesystem?) -- '
+              'set FLASK_SECRET_KEY so sessions survive a restart.', flush=True)
     return key
 
 
 app.secret_key = _get_secret_key()
 
-AUTO_SYNC_INTERVAL = 1800  # 30 minutes
-
-
-def _preload():
-    time.sleep(1)
-    try:
-        pl.load_data()
-        print('[app] Payout data pre-loaded successfully', flush=True)
-    except Exception as exc:
-        print(f'[app] Pre-load failed: {exc}', flush=True)
-
-
-def _auto_sync_loop():
-    while True:
-        time.sleep(AUTO_SYNC_INTERVAL)
-        try:
-            pl.load_data(force=True)
-            print('[auto-sync] Refresh complete', flush=True)
-        except Exception as exc:
-            print(f'[auto-sync] Error: {exc}', flush=True)
-
+# Data loads synchronously, on demand, inside payouts_loader.load_data()
+# (called from every route that needs it) rather than via a background
+# thread here -- a serverless host gives no guarantee a spawned thread
+# keeps running once the request that started it has returned.
 
 # ── Serve frontend ───────────────────────────────────────────────────────────
 
@@ -258,14 +249,7 @@ def api_status():
     })
 
 
-# Runs on import, not just `python app.py` directly -- gunicorn (used in
-# production) imports this module without ever hitting __main__, so gating
-# these behind that guard would mean production never preloads or
-# auto-syncs, and the first real request pays for a cold, synchronous
-# Sheets load that's slow enough to trip gunicorn's worker timeout.
 app.permanent_session_lifetime = datetime.timedelta(days=30)
-threading.Thread(target=_preload,        daemon=True).start()
-threading.Thread(target=_auto_sync_loop, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5001)

@@ -1,0 +1,10 @@
+apps_script/
+__pycache__/
+*.pyc
+venv/
+*.log
+data/secret_key.json
+data/app_state_sheet_id.json
+data/.otp_debug
+data/pins.json
+service_account.json

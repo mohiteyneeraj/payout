@@ -7,6 +7,7 @@ per interviewer.
 """
 import os
 import re
+import json
 import time
 import socket
 import datetime
@@ -38,6 +39,17 @@ def _parse_date(v):
 
 SA_FILE   = os.environ.get('SA_FILE_PATH') or os.path.join(os.path.dirname(__file__), 'service_account.json')
 SCOPES    = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+
+
+def _load_credentials(scopes):
+    """Serverless hosts (Vercel) have no writable/mountable file for the
+    service account key -- GOOGLE_SERVICE_ACCOUNT_JSON (the raw key JSON)
+    takes priority when set; SA_FILE_PATH (a mounted secret file, e.g. on
+    Render) is the fallback for hosts that do support that."""
+    raw = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if raw:
+        return service_account.Credentials.from_service_account_info(json.loads(raw), scopes=scopes)
+    return service_account.Credentials.from_service_account_file(SA_FILE, scopes=scopes)
 SHEET_ID  = '1LW1hkXNz1LAvqB9EOV52lWRu36VoSw8uabRWsaVS78g'
 LAST_COL  = 'AN'   # generous upper bound; widest known tab is 34 cols (AH)
 
@@ -68,9 +80,8 @@ _MONTH_LABEL = {
 
 _cache: dict = {'df': None, 'directory': None, 'months': None, 'ts': 0.0,
                 'warnings': [], 'tab_count': 0}
-_load_lock   = threading.Lock()
-_loading_now = False
-CACHE_TTL    = 1800  # 30 minutes
+_load_lock = threading.Lock()
+CACHE_TTL  = 1800  # 30 minutes
 
 # Older tabs are skipped entirely (not even fetched) to bound memory --
 # the full history back to 2024 doesn't fit in a 512MB instance alongside
@@ -84,7 +95,7 @@ MIN_MONTH_KEY = tuple(int(p) for p in _MIN_MONTH.split('-'))
 def _build_service(http_timeout: int = 45):
     import httplib2
     import google_auth_httplib2
-    creds = service_account.Credentials.from_service_account_file(SA_FILE, scopes=SCOPES)
+    creds = _load_credentials(SCOPES)
     http  = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=http_timeout))
     # static_discovery avoids an extra live fetch of the API discovery doc
     # over that same (auth-wrapped) http client on every cold start.
@@ -397,7 +408,6 @@ def _merge_directory_by_contact(directory: dict, name_to_dbids: dict):
 # ── Full load ─────────────────────────────────────────────────────────────
 
 def _do_load():
-    global _loading_now
     warnings = []
     try:
         service  = _build_service()
@@ -514,26 +524,24 @@ def _do_load():
         warnings.append(f'load failed: {exc}')
         _cache['warnings'] = warnings
         print(f'[payouts_loader] Load failed: {exc}', flush=True)
-    finally:
-        _loading_now = False
-        _load_lock.release()
 
 
 def load_data(force: bool = False):
-    """Ensure cache is populated; trigger background refresh if stale. Blocks on first load."""
-    global _loading_now
+    """Ensure cache is populated, loading synchronously if it's stale or
+    empty. Deliberately synchronous rather than a background thread: on a
+    serverless host (Vercel) nothing guarantees a background thread keeps
+    running once the request that spawned it returns, and a stale-but-
+    present cache already makes this cheap for every request except the
+    rare one that has to pay for a real reload."""
     now = time.time()
     if not force and _cache['df'] is not None and (now - _cache['ts']) < CACHE_TTL:
         return
-    if not _loading_now:
-        if _load_lock.acquire(blocking=False):
-            _loading_now = True
-            threading.Thread(target=_do_load, daemon=True).start()
-    if _cache['df'] is not None:
-        return
-    deadline = time.time() + 300
-    while _loading_now and time.time() < deadline:
-        time.sleep(1)
+    with _load_lock:
+        # Another request may have refreshed it while we waited for the lock.
+        now = time.time()
+        if not force and _cache['df'] is not None and (now - _cache['ts']) < CACHE_TTL:
+            return
+        _do_load()
 
 
 def get_last_loaded() -> str:

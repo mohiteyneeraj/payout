@@ -46,10 +46,22 @@ _service = None
 _sheet_id = None
 
 
+def _sa_info() -> dict:
+    """The service account key as a dict, from whichever source is
+    available -- GOOGLE_SERVICE_ACCOUNT_JSON (serverless hosts with no
+    mountable file, e.g. Vercel) takes priority over SA_FILE_PATH (a
+    mounted secret file, e.g. on Render) or a local file for dev."""
+    raw = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if raw:
+        return json.loads(raw)
+    with open(SA_FILE, encoding='utf-8') as f:
+        return json.load(f)
+
+
 def _build_service():
     global _service
     if _service is None:
-        creds = service_account.Credentials.from_service_account_file(SA_FILE, scopes=SCOPES)
+        creds = service_account.Credentials.from_service_account_info(_sa_info(), scopes=SCOPES)
         _service = build('sheets', 'v4', credentials=creds, static_discovery=True)
     return _service
 
@@ -64,8 +76,7 @@ def _load_admin_emails() -> list:
 def get_service_account_email() -> str:
     global SERVICE_ACCOUNT_EMAIL
     if SERVICE_ACCOUNT_EMAIL is None:
-        with open(SA_FILE, encoding='utf-8') as f:
-            SERVICE_ACCOUNT_EMAIL = json.load(f)['client_email']
+        SERVICE_ACCOUNT_EMAIL = _sa_info()['client_email']
     return SERVICE_ACCOUNT_EMAIL
 
 

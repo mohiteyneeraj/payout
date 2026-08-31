@@ -41,15 +41,26 @@ SA_FILE   = os.environ.get('SA_FILE_PATH') or os.path.join(os.path.dirname(__fil
 SCOPES    = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 
-def _load_credentials(scopes):
-    """Serverless hosts (Vercel) have no writable/mountable file for the
-    service account key -- GOOGLE_SERVICE_ACCOUNT_JSON (the raw key JSON)
-    takes priority when set; SA_FILE_PATH (a mounted secret file, e.g. on
-    Render) is the fallback for hosts that do support that."""
+def _sa_info() -> dict:
+    """Service account key as a dict. GOOGLE_SERVICE_ACCOUNT_JSON_B64 (base64
+    of the raw key file) is checked first -- a multi-line JSON value pasted
+    into a web env-var box is fragile (line-ending/quote mangling); base64
+    collapses it to one line of plain characters nothing can mangle.
+    GOOGLE_SERVICE_ACCOUNT_JSON (raw JSON) and SA_FILE_PATH (a mounted
+    secret file, e.g. on Render) are the fallbacks."""
+    b64 = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON_B64')
+    if b64:
+        import base64
+        return json.loads(base64.b64decode(b64))
     raw = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
     if raw:
-        return service_account.Credentials.from_service_account_info(json.loads(raw), scopes=scopes)
-    return service_account.Credentials.from_service_account_file(SA_FILE, scopes=scopes)
+        return json.loads(raw)
+    with open(SA_FILE, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _load_credentials(scopes):
+    return service_account.Credentials.from_service_account_info(_sa_info(), scopes=scopes)
 SHEET_ID  = '1LW1hkXNz1LAvqB9EOV52lWRu36VoSw8uabRWsaVS78g'
 LAST_COL  = 'AN'   # generous upper bound; widest known tab is 34 cols (AH)
 

@@ -48,9 +48,12 @@ _sheet_id = None
 
 def _sa_info() -> dict:
     """The service account key as a dict, from whichever source is
-    available -- GOOGLE_SERVICE_ACCOUNT_JSON (serverless hosts with no
-    mountable file, e.g. Vercel) takes priority over SA_FILE_PATH (a
-    mounted secret file, e.g. on Render) or a local file for dev."""
+    available. See payouts_loader.py's _sa_info() for why base64 is
+    checked first -- same reasoning applies here."""
+    b64 = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON_B64')
+    if b64:
+        import base64
+        return json.loads(base64.b64decode(b64))
     raw = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
     if raw:
         return json.loads(raw)

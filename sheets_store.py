@@ -14,10 +14,15 @@ bootstraps the tabs/headers on it. See ensure_app_state_sheet().
 import os
 import json
 import time
+import socket
 import threading
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+
+# See payouts_loader.py for why this matters: without a process-wide socket
+# timeout, a hung network call here has no exception to be caught by.
+socket.setdefaulttimeout(45)
 
 SA_FILE = os.environ.get('SA_FILE_PATH') or os.path.join(os.path.dirname(__file__), 'service_account.json')
 SCOPES  = ['https://www.googleapis.com/auth/spreadsheets']
@@ -45,7 +50,7 @@ def _build_service():
     global _service
     if _service is None:
         creds = service_account.Credentials.from_service_account_file(SA_FILE, scopes=SCOPES)
-        _service = build('sheets', 'v4', credentials=creds)
+        _service = build('sheets', 'v4', credentials=creds, static_discovery=True)
     return _service
 
 

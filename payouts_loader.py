@@ -8,9 +8,16 @@ per interviewer.
 import os
 import re
 import time
+import socket
 import datetime
 import threading
 from dateutil import parser as _dateutil_parser
+
+# Process-wide backstop: without this, a hung call anywhere in the Sheets
+# client (auth token refresh, live discovery-doc fetch, etc.) can block the
+# background loader forever with no exception ever raised -- httplib2's own
+# per-request timeout doesn't cover every code path involved.
+socket.setdefaulttimeout(45)
 
 _DATETIME_MIN = datetime.datetime.min
 
@@ -74,12 +81,14 @@ MIN_MONTH_KEY = tuple(int(p) for p in _MIN_MONTH.split('-'))
 
 # ── Google Sheets helpers ───────────────────────────────────────────────────
 
-def _build_service(http_timeout: int = 120):
+def _build_service(http_timeout: int = 45):
     import httplib2
     import google_auth_httplib2
     creds = service_account.Credentials.from_service_account_file(SA_FILE, scopes=SCOPES)
     http  = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=http_timeout))
-    return build('sheets', 'v4', http=http)
+    # static_discovery avoids an extra live fetch of the API discovery doc
+    # over that same (auth-wrapped) http client on every cold start.
+    return build('sheets', 'v4', http=http, static_discovery=True)
 
 
 def _list_tabs(service) -> list:
@@ -87,12 +96,13 @@ def _list_tabs(service) -> list:
     return [s['properties']['title'] for s in meta.get('sheets', [])]
 
 
-def _fetch_tab(service, tab: str, retries: int = 3) -> list:
+def _fetch_tab(service, tab: str, retries: int = 4) -> list:
     """Return the raw values grid (list of lists) for a tab."""
     last_exc = None
     for attempt in range(retries):
         if attempt:
-            time.sleep(3 * attempt)
+            time.sleep(10 * attempt if 'rate_limit' in str(last_exc).lower()
+                       or ' 429' in str(last_exc) else 3 * attempt)
         try:
             res = service.spreadsheets().values().get(
                 spreadsheetId=SHEET_ID,
@@ -104,7 +114,8 @@ def _fetch_tab(service, tab: str, retries: int = 3) -> list:
             last_exc = exc
             err = str(exc).lower()
             if any(k in err for k in ('503', 'unavailable', 'timed out', 'timeout',
-                                       'connection reset', 'remotedisconnected')):
+                                       'connection reset', 'remotedisconnected',
+                                       'rate_limit_exceeded', ' 429')):
                 continue
             raise
     raise last_exc

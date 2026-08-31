@@ -559,6 +559,21 @@ def get_emails_for_db_id(db_id: str) -> set:
     return set(entry['emails']) if entry else set()
 
 
+def find_db_id_by_phone(phone: str):
+    """Fallback identity match for a login email that's newer than the payout
+    sheet's own roster data (e.g. a just-issued cuemath.com address the
+    finance sheet has never seen) -- phone number is a stabler signal than
+    email for tying it back to the same interviewer record."""
+    load_data()
+    target = re.sub(r'\D', '', str(phone or ''))
+    if not target:
+        return None
+    for dbid, entry in (_cache['directory'] or {}).items():
+        if target in entry['phones']:
+            return dbid
+    return None
+
+
 def get_display_name(db_id: str) -> str:
     load_data()
     entry = (_cache['directory'] or {}).get(db_id)

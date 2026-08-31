@@ -44,6 +44,17 @@ def get_roster() -> list:
     overlay = _load_overlay()
     allowed_items = [(email, r) for email, r in overlay.items() if r.get('status') == 'active']
     allowed = {email for email, _ in allowed_items}
+
+    # phone (digits-only) -> allowlisted emails sharing it, so a freshly
+    # onboarded email (e.g. a cuemath.com address the payout sheet's own
+    # roster data has never seen) still attaches to the right existing
+    # derived person instead of being dropped or shown as a duplicate.
+    phone_to_allowed_emails: dict = {}
+    for email, r in allowed_items:
+        phone = re.sub(r'\D', '', str(r.get('phone') or ''))
+        if phone:
+            phone_to_allowed_emails.setdefault(phone, set()).add(email)
+
     derived = pl.get_all_interviewers()
 
     rows = []
@@ -52,6 +63,9 @@ def get_roster() -> list:
     for r in derived:
         emails = pl.get_emails_for_db_id(r['db_id']) or ({_norm_email(r['email'])} if r.get('email') else set())
         hit = emails & allowed
+        phone = re.sub(r'\D', '', str(r.get('phone') or ''))
+        if phone:
+            hit = hit | phone_to_allowed_emails.get(phone, set())
         if not hit:
             continue
         matched_emails |= hit
@@ -59,9 +73,13 @@ def get_roster() -> list:
             phone = overlay[e].get('phone')
             if phone:
                 seen_phones.add(phone)
-        ov = overlay.get(_norm_email(r.get('email')))
+        # Prefer a cuemath.com address for display/contact when the person
+        # has one allowlisted, even if the payout sheet itself still only
+        # knows them by a personal email.
+        display_email = next((e for e in sorted(hit) if e.endswith('@cuemath.com')), r.get('email', ''))
+        ov = overlay.get(display_email) or overlay.get(_norm_email(r.get('email')))
         rows.append({
-            'db_id': r['db_id'], 'name': r['name'], 'email': r.get('email', ''),
+            'db_id': r['db_id'], 'name': r['name'], 'email': display_email,
             'phone': r.get('phone') or (ov.get('phone') if ov else '') or '',
             'status': 'active', 'is_manual': False,
             'total_amount': r['total_amount'], 'total_count': r['total_count'],
@@ -116,6 +134,13 @@ def find_identity_by_email(email: str):
         return None
 
     db_id = pl.find_db_id_by_email(norm)
+    if not db_id:
+        # Not seen in the payout sheet's own roster data yet (e.g. a
+        # freshly issued cuemath.com address) -- fall back to phone, which
+        # ties back to the same existing interviewer record.
+        phone = re.sub(r'\D', '', str(overlay[norm].get('phone') or ''))
+        if phone:
+            db_id = pl.find_db_id_by_phone(phone)
     if db_id:
         return {'db_id': db_id, 'name': pl.get_display_name(db_id), 'is_manual': False}
     return {'db_id': 'manual::' + norm, 'name': overlay[norm].get('name', ''), 'is_manual': True}

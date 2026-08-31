@@ -58,6 +58,21 @@ app.secret_key = _get_secret_key()
 # thread here -- a serverless host gives no guarantee a spawned thread
 # keeps running once the request that started it has returned.
 
+# Temporary: surface the real exception in the response body while we don't
+# yet have log access on this host. VERCEL is set automatically by Vercel's
+# runtime, so this is on there and off everywhere else without extra config.
+if os.environ.get('VERCEL'):
+    from werkzeug.exceptions import HTTPException
+
+    @app.errorhandler(Exception)
+    def _debug_unhandled(e):
+        if isinstance(e, HTTPException):
+            return e
+        import traceback
+        traceback.print_exc()
+        return jsonify({'ok': False, 'error': f'{type(e).__name__}: {e}'}), 500
+
+
 # ── Serve frontend ───────────────────────────────────────────────────────────
 
 @app.route('/')

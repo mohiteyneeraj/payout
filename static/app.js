@@ -307,7 +307,7 @@
       <div class="detail-row">
         <div>
           <span class="detail-candidate">${escapeHtml(r.candidate || 'Candidate')}</span>
-          <span class="detail-role">${escapeHtml(r.role)}</span>
+          <span class="detail-role detail-role-${r.attendance === 'no_show' ? 'no-show' : 'done'}">${escapeHtml(r.attendance_label || 'Interview Done')}</span>
           <div class="detail-meta">${escapeHtml(r.date || '')}</div>
         </div>
         <div class="detail-amount">${money(r.amount)}</div>

@@ -202,6 +202,24 @@ def _norm_email(v) -> str:
     return str(v).strip().lower()
 
 
+# Recent tabs (Apr 2026 onward) repurpose the 'Subject' column to also carry
+# the interview's attendance outcome, e.g. 'Math No Show' / 'Math - Reschedule'
+# alongside the plain subject name ('Math') for a completed interview. Older
+# tabs use that column purely as a subject name with no such suffix, so an
+# unrecognized/blank value defaults to 'done' rather than 'unknown'.
+def _classify_attendance(subject_raw) -> str:
+    s = str(subject_raw or '').strip().lower()
+    if 'no show' in s or 'reschedul' in s:
+        return 'no_show'
+    return 'done'
+
+
+ATTENDANCE_LABELS = {
+    'done': 'Interview Done',
+    'no_show': 'Reschedule/No Show/NI',
+}
+
+
 # ── Per-tab parsing ──────────────────────────────────────────────────────────
 
 def _parse_tab(grid: list, month_label: str):
@@ -216,6 +234,7 @@ def _parse_tab(grid: list, month_label: str):
         col_cand = _find_col(headers, equals='name')
     col_phone  = _find_col(headers, contains_all=['phone'])
     col_date   = _find_col(headers, contains_all=['interview', 'date'])
+    col_subject     = _find_col(headers, equals='subject')
     col_interviewer = _find_col(headers, equals='interviewer')
     col_reviewer    = _find_col(headers, equals='reviewer')
     col_pay_int = _find_col(headers, contains_all=['payout', 'interviewer'])
@@ -228,6 +247,7 @@ def _parse_tab(grid: list, month_label: str):
                 return r[i] if 0 <= i < len(r) else ''
             candidate = str(cell(col_cand)).strip()
             date_raw  = cell(col_date)
+            attendance = _classify_attendance(cell(col_subject)) if col_subject >= 0 else 'done'
             if col_interviewer >= 0:
                 person = str(cell(col_interviewer)).strip()
                 amount = _num(cell(col_pay_int)) if col_pay_int >= 0 else 0.0
@@ -235,6 +255,7 @@ def _parse_tab(grid: list, month_label: str):
                     raw_records.append({
                         'person': person, 'role': 'Interviewer', 'candidate': candidate,
                         'date_raw': date_raw, 'amount': amount, 'month': month_label,
+                        'attendance': attendance,
                     })
             if col_reviewer >= 0:
                 person = str(cell(col_reviewer)).strip()
@@ -243,6 +264,7 @@ def _parse_tab(grid: list, month_label: str):
                     raw_records.append({
                         'person': person, 'role': 'Reviewer', 'candidate': candidate,
                         'date_raw': date_raw, 'amount': amount, 'month': month_label,
+                        'attendance': attendance,
                     })
 
     # ── Rollup block: Name | Count of interviews | Amount ──────────────────
@@ -637,10 +659,13 @@ def get_payouts_for(db_id: str) -> dict:
         rows = []
         for rec in sorted(m['rows'], key=_sort_key):
             ts = _parse_date(rec.get('date_raw'))
+            attendance = rec.get('attendance', 'done')
             rows.append({
                 'candidate': rec['candidate'], 'role': rec['role'],
                 'date': ts.strftime('%d %b %Y %H:%M') if ts is not None else str(rec.get('date_raw') or ''),
                 'amount': rec['amount'],
+                'attendance': attendance,
+                'attendance_label': ATTENDANCE_LABELS.get(attendance, ATTENDANCE_LABELS['done']),
             })
         details[month_key] = rows
 

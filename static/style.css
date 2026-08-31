@@ -139,6 +139,8 @@ input[type=email]:focus, input[type=text]:focus { border-color: var(--yellow-dar
   text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
   background: #FFF3D6; color: var(--yellow-dark); margin-left: 6px;
 }
+.detail-role-done    { background: #E8F9EE; color: var(--green); }
+.detail-role-no-show { background: #FDECEC; color: var(--red); }
 
 .empty-state { text-align: center; color: var(--text-muted); padding: 40px 0; font-size: 14px; }
 .status-footer { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 24px; }

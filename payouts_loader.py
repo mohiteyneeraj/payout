@@ -74,6 +74,12 @@ EXCLUDE_TABS = {
     'Document links for payout sheet',
 }
 
+# Interviewer-name spellings in older tabs that refer to a roster name
+# (normalized/casefolded on both sides).
+NAME_ALIASES = {
+    'daminisrivastava': 'damini',
+}
+
 # Tabs that hold *extra* rows for a month whose main data lives in another
 # tab — merge these into the target instead of treating as their own month.
 MERGE_INTO = {
@@ -484,35 +490,36 @@ def _do_load():
         name_to_single_dbid = {n: next(iter(ids)) for n, ids in name_to_dbids.items() if len(ids) == 1}
 
         # ── Attribute raw records to a db_id, aggregate per person per month ──
+        # Rows whose interviewer name doesn't resolve to exactly one roster
+        # DB ID (internal staff, people with no roster entry) are dropped:
+        # they can't be tied to a panelist, so they have no place in the tool.
         person_month: dict = {}   # (db_id) -> {month_key: {'count', 'amount', 'rows': []}}
-        unmatched = 0
+        dropped: dict = {}
         for rec in all_raw:
             nname = _norm_name(rec['person'])
+            nname = NAME_ALIASES.get(nname, nname)
             dbid = name_to_single_dbid.get(nname)
             if dbid is None:
-                # ambiguous or unknown — fall back to a name-based pseudo identity
-                dbid = f'name::{nname}'
-                unmatched += 1
+                dropped[nname] = dropped.get(nname, 0) + 1
+                continue
             slot = person_month.setdefault(dbid, {})
             m = slot.setdefault(rec['month'], {'count': 0, 'amount': 0.0, 'rows': []})
             m['count'] += 1
             m['amount'] += rec['amount']
             m['rows'].append(rec)
 
-        if unmatched:
-            warnings.append(f'{unmatched} interview row(s) attributed by name only '
-                             f'(no unique DB ID match) — grouped under a name-based identity.')
+        if dropped:
+            print(f'[payouts_loader] Dropped {sum(dropped.values())} row(s) with no roster '
+                  f'DB ID match: ' + ', '.join(sorted(dropped)), flush=True)
 
         # cross-check against the sheet's own rollup 'Amount' per month/person
         mismatches = 0
         for month_key, mdata in rollup_by_month.items():
             for nname, expected in mdata['totals'].items():
-                dbid = name_to_single_dbid.get(nname)
-                actual = 0.0
-                if dbid and dbid in person_month:
-                    actual = person_month[dbid].get(month_key, {}).get('amount', 0.0)
-                elif f'name::{nname}' in person_month:
-                    actual = person_month[f'name::{nname}'].get(month_key, {}).get('amount', 0.0)
+                dbid = name_to_single_dbid.get(NAME_ALIASES.get(nname, nname))
+                if dbid is None:
+                    continue  # dropped above -- nothing to compare
+                actual = person_month.get(dbid, {}).get(month_key, {}).get('amount', 0.0)
                 if abs(actual - expected) > 1:
                     mismatches += 1
         if mismatches:

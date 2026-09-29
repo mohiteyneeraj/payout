@@ -88,6 +88,9 @@ NAME_ALIASES = {
 # Rs 400/hr: Math 2nd opinion 30 min, Comms 2nd opinion 15 min,
 # Communication Screening 10 min.
 SECOND_OPINION_SHEET_ID = '1MH0L9xS3k0hr9QgAdyO8-6GXgxTlp7N6m_bL7BGpMzU'
+# Second-opinion months already paid out -- left out of the tool so only
+# unpaid review payouts show. Add a month here once it has been paid.
+SECOND_OPINION_PAID_MONTHS = {'2026-08'}
 
 # Tabs that hold *extra* rows for a month whose main data lives in another
 # tab — merge these into the target instead of treating as their own month.
@@ -308,8 +311,8 @@ def _load_second_opinion(service, warnings: list, month_keys: set) -> list:
     for sh in meta.get('sheets', []):
         tab = sh['properties']['title']
         month_key = _second_opinion_month_key(tab)
-        if month_key is None or month_key not in month_keys:
-            continue   # not a month tab, or outside the rolling window
+        if month_key is None or month_key not in month_keys or month_key in SECOND_OPINION_PAID_MONTHS:
+            continue   # not a month tab, outside the rolling window, or already paid
         res = service.spreadsheets().values().get(
             spreadsheetId=SECOND_OPINION_SHEET_ID, range=f"'{tab}'!A1:H",
             valueRenderOption='UNFORMATTED_VALUE').execute()

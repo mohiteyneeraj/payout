@@ -78,7 +78,16 @@ EXCLUDE_TABS = {
 # (normalized/casefolded on both sides).
 NAME_ALIASES = {
     'daminisrivastava': 'damini',
+    'sapna': 'sapna golani',   # second-opinion sheet uses first name only
 }
+
+# Second-opinion / communication-screening review payouts ("2nd opinion
+# payout" sheet). One tab per month named after the month ('August',
+# 'September', ...); columns: Candidate Name | Phone | Email | Reviewed By |
+# Comments | Category | Paying for | Money to be paid (Rs). Billed at
+# Rs 400/hr: Math 2nd opinion 30 min, Comms 2nd opinion 15 min,
+# Communication Screening 10 min.
+SECOND_OPINION_SHEET_ID = '1MH0L9xS3k0hr9QgAdyO8-6GXgxTlp7N6m_bL7BGpMzU'
 
 # Tabs that hold *extra* rows for a month whose main data lives in another
 # tab — merge these into the target instead of treating as their own month.
@@ -256,7 +265,75 @@ def _classify_attendance(subject_raw) -> str:
 ATTENDANCE_LABELS = {
     'done': 'Interview Done',
     'no_show': 'Reschedule/No Show/NI',
+    'second_opinion': 'Second Opinion',
 }
+
+
+def _second_opinion_month_key(tab: str):
+    """'September' / 'Sep 2026' -> 'YYYY-MM'; None for non-month tabs.
+    A bare month name means its most recent occurrence (not in the future)."""
+    words = tab.strip().split()
+    if not words:
+        return None
+    mnum = _MONTH_ABBR.get(words[0][:3].lower())
+    if not mnum or words[0].lower() not in (_MONTH_LABEL[mnum].lower(), words[0][:3].lower(), 'sept'):
+        return None
+    year_match = re.fullmatch(r"'?(20\d{2}|\d{2})'?", words[1]) if len(words) == 2 else None
+    if len(words) > 2 or (len(words) == 2 and not year_match):
+        return None   # e.g. 'September Summary'
+    if year_match:
+        y = int(year_match.group(1))
+        year = y if y > 100 else 2000 + y
+    else:
+        today = datetime.date.today()
+        year = today.year if mnum <= today.month else today.year - 1
+    return f'{year:04d}-{mnum:02d}'
+
+
+def _load_second_opinion(service, warnings: list) -> list:
+    """Raw payout records (same shape as interview rows) from the
+    second-opinion payout sheet; only rows with a positive amount."""
+    try:
+        meta = service.spreadsheets().get(spreadsheetId=SECOND_OPINION_SHEET_ID,
+                                          fields='sheets.properties.title').execute()
+    except Exception as exc:
+        warnings.append(f'second-opinion sheet: fetch failed ({exc})')
+        return []
+    records = []
+    for sh in meta.get('sheets', []):
+        tab = sh['properties']['title']
+        month_key = _second_opinion_month_key(tab)
+        if month_key is None:
+            continue
+        res = service.spreadsheets().values().get(
+            spreadsheetId=SECOND_OPINION_SHEET_ID, range=f"'{tab}'!A1:H",
+            valueRenderOption='UNFORMATTED_VALUE').execute()
+        grid = res.get('values', [])
+        if not grid:
+            continue
+        headers = grid[0]
+        c_cand = _find_col(headers, equals='candidate name')
+        c_rev  = _find_col(headers, equals='reviewed by')
+        c_cat  = _find_col(headers, equals='category')
+        c_pay  = _find_col(headers, contains_all=['paying for'])
+        c_amt  = _find_col(headers, contains_all=['money'])
+        if min(c_rev, c_amt) < 0:
+            warnings.append(f'second-opinion tab {tab!r}: unexpected headers')
+            continue
+        for r in grid[1:]:
+            def cell(i):
+                return r[i] if 0 <= i < len(r) else ''
+            person = str(cell(c_rev)).strip()
+            amount = _num(cell(c_amt))
+            if not person or amount <= 0:
+                continue
+            label = str(cell(c_pay) or cell(c_cat)).strip() or ATTENDANCE_LABELS['second_opinion']
+            records.append({
+                'person': person, 'role': 'Second Opinion', 'candidate': str(cell(c_cand)).strip(),
+                'date_raw': '', 'amount': amount, 'month': month_key,
+                'attendance': 'second_opinion', 'label': label, 'source': 'second_opinion',
+            })
+    return records
 
 
 # ── Per-tab parsing ──────────────────────────────────────────────────────────
@@ -474,6 +551,11 @@ def _do_load():
 
             rollup_by_month[month_key] = {'label': month_label, 'totals': rollup_totals}
 
+        all_raw.extend(_load_second_opinion(service, warnings))
+        for month_key in {rec['month'] for rec in all_raw} - set(rollup_by_month):
+            y, mo = (int(x) for x in month_key.split('-'))
+            rollup_by_month[month_key] = {'label': f'{_MONTH_LABEL[mo]} {y}', 'totals': {}}
+
         directory, name_to_dbids, _canonical_map = _merge_directory_by_contact(directory, name_to_dbids)
 
         collisions = {n: ids for n, ids in name_to_dbids.items() if len(ids) > 1}
@@ -495,6 +577,7 @@ def _do_load():
         # they can't be tied to a panelist, so they have no place in the tool.
         person_month: dict = {}   # (db_id) -> {month_key: {'count', 'amount', 'rows': []}}
         dropped: dict = {}
+        interview_amount: dict = {}   # (db_id, month) -> interview-only total, for the rollup check
         for rec in all_raw:
             nname = _norm_name(rec['person'])
             nname = NAME_ALIASES.get(nname, nname)
@@ -507,6 +590,9 @@ def _do_load():
             m['count'] += 1
             m['amount'] += rec['amount']
             m['rows'].append(rec)
+            if rec.get('source') != 'second_opinion':
+                k = (dbid, rec['month'])
+                interview_amount[k] = interview_amount.get(k, 0.0) + rec['amount']
 
         if dropped:
             print(f'[payouts_loader] Dropped {sum(dropped.values())} row(s) with no roster '
@@ -519,7 +605,7 @@ def _do_load():
                 dbid = name_to_single_dbid.get(NAME_ALIASES.get(nname, nname))
                 if dbid is None:
                     continue  # dropped above -- nothing to compare
-                actual = person_month.get(dbid, {}).get(month_key, {}).get('amount', 0.0)
+                actual = interview_amount.get((dbid, month_key), 0.0)
                 if abs(actual - expected) > 1:
                     mismatches += 1
         if mismatches:
@@ -717,7 +803,7 @@ def get_payouts_for(db_id: str) -> dict:
                 'date': ts.strftime('%d %b %Y %H:%M') if ts is not None else str(rec.get('date_raw') or ''),
                 'amount': rec['amount'],
                 'attendance': attendance,
-                'attendance_label': ATTENDANCE_LABELS.get(attendance, ATTENDANCE_LABELS['done']),
+                'attendance_label': rec.get('label') or ATTENDANCE_LABELS.get(attendance, ATTENDANCE_LABELS['done']),
             })
         details[month_key] = rows
 

@@ -512,18 +512,19 @@
     applyAdminSort();
     renderAdminTable(allInterviewers);
 
+    const status = await api('/api/status');
+    const period = (status.ok && status.period) || '';
     const totalAmount = allInterviewers.reduce((s, i) => s + i.total_amount, 0);
     adminSummary.textContent = allInterviewers.length
-      ? `${allInterviewers.length} interviewer(s), ${money(totalAmount)} paid all-time`
+      ? `${allInterviewers.length} interviewer(s), ${money(totalAmount)} paid${period ? ` (${period})` : ''}`
       : 'No interviewers found yet.';
 
     adminStats.innerHTML = [
       statCard({ label: 'Interviewers', value: allInterviewers.length }),
-      statCard({ label: 'Paid all-time', value: money(totalAmount) }),
+      statCard({ label: period ? `Paid ${period}` : 'Total paid', value: money(totalAmount) }),
       statCard({ label: 'Avg / interviewer', value: money(allInterviewers.length ? totalAmount / allInterviewers.length : 0) }),
     ].join('');
 
-    const status = await api('/api/status');
     if (status.ok) {
       statusFooterAdmin.textContent = `Data last synced: ${status.last_loaded}`;
     }
@@ -537,7 +538,9 @@
     const list = await ensureInterviewersLoaded();
     const top = list.slice().sort((a, b) => b.total_amount - a.total_amount).slice(0, 10)
       .map(i => ({ label: i.name, value: i.total_amount }));
-    renderLeaderboard(topEarners, top, { title: 'Top earners (all-time)' });
+    const status = await api('/api/status');
+    const period = (status.ok && status.period) || '';
+    renderLeaderboard(topEarners, top, { title: period ? `Top earners (${period})` : 'Top earners' });
 
     const summary = await api('/api/admin/summary');
     if (summary.ok) {

@@ -260,6 +260,7 @@ def api_status():
         'ok': True,
         'last_loaded': pl.get_last_loaded(),
         'tab_count':   pl.get_tab_count(),
+        'period':      pl.get_period_label(),
         'warnings':    pl.get_warnings(),
     })
 

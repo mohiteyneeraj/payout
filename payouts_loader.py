@@ -664,6 +664,17 @@ def get_last_loaded() -> str:
     return 'Never'
 
 
+def get_period_label() -> str:
+    """Span of payout months currently loaded, e.g. 'Apr 2026 – Sep 2026'."""
+    keys = sorted((_cache.get('months') or {}).keys())
+    if not keys:
+        return ''
+    def short(k):
+        y, m = k.split('-')
+        return f"{_MONTH_LABEL[int(m)][:3]} {y}"
+    return short(keys[0]) if len(keys) == 1 else f'{short(keys[0])} – {short(keys[-1])}'
+
+
 def get_warnings() -> list:
     return _cache.get('warnings', [])
 

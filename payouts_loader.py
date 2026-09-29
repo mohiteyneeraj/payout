@@ -115,6 +115,10 @@ CACHE_TTL  = 1800  # 30 minutes
 _MIN_MONTH = os.environ.get('MIN_PAYOUT_MONTH', '2026-04')
 MIN_MONTH_KEY = tuple(int(p) for p in _MIN_MONTH.split('-'))
 
+# Rolling window: only the latest N monthly tabs are loaded. When a new
+# month's tab is added to the sheet, the oldest month drops out.
+MAX_MONTHS = int(os.environ.get('MAX_PAYOUT_MONTHS', '6'))
+
 
 # ── Google Sheets helpers ───────────────────────────────────────────────────
 
@@ -189,7 +193,8 @@ def _classify_tabs(all_tabs: list) -> dict:
         months.setdefault(key, [])
         if tab not in months[key]:
             months[key].append(tab)
-    return months
+    keep = sorted(months)[-MAX_MONTHS:] if MAX_MONTHS > 0 else sorted(months)
+    return {k: months[k] for k in keep}
 
 
 # ── Header-driven column lookup (positions drift across eras) ──────────────
@@ -290,7 +295,7 @@ def _second_opinion_month_key(tab: str):
     return f'{year:04d}-{mnum:02d}'
 
 
-def _load_second_opinion(service, warnings: list) -> list:
+def _load_second_opinion(service, warnings: list, month_keys: set) -> list:
     """Raw payout records (same shape as interview rows) from the
     second-opinion payout sheet; only rows with a positive amount."""
     try:
@@ -303,8 +308,8 @@ def _load_second_opinion(service, warnings: list) -> list:
     for sh in meta.get('sheets', []):
         tab = sh['properties']['title']
         month_key = _second_opinion_month_key(tab)
-        if month_key is None:
-            continue
+        if month_key is None or month_key not in month_keys:
+            continue   # not a month tab, or outside the rolling window
         res = service.spreadsheets().values().get(
             spreadsheetId=SECOND_OPINION_SHEET_ID, range=f"'{tab}'!A1:H",
             valueRenderOption='UNFORMATTED_VALUE').execute()
@@ -551,7 +556,8 @@ def _do_load():
 
             rollup_by_month[month_key] = {'label': month_label, 'totals': rollup_totals}
 
-        all_raw.extend(_load_second_opinion(service, warnings))
+        all_raw.extend(_load_second_opinion(
+            service, warnings, {f'{y:04d}-{m:02d}' for (y, m) in month_map}))
         for month_key in {rec['month'] for rec in all_raw} - set(rollup_by_month):
             y, mo = (int(x) for x in month_key.split('-'))
             rollup_by_month[month_key] = {'label': f'{_MONTH_LABEL[mo]} {y}', 'totals': {}}
